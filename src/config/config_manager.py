@@ -37,6 +37,8 @@ class ConfigManager:
         self._reload_debounce_task: Optional[asyncio.Task] = None
         self._debounce_delay: float = 0.5  # 防抖延迟（秒）
         self._loop: Optional[asyncio.AbstractEventLoop] = None  # 事件循环引用
+        self._is_reloading: bool = False  # 标记是否正在重载
+        self._last_reload_trigger: float = 0.0  # 最后一次触发重载的时间
 
     def load(self, config_path: str = "config.toml") -> None:
         """加载配置文件
@@ -247,29 +249,46 @@ class ConfigManager:
 
     async def _debounced_reload(self) -> None:
         """防抖重载：避免短时间内多次文件修改事件导致重复重载"""
-        # 取消之前的防抖任务
-        if self._reload_debounce_task and not self._reload_debounce_task.done():
-            self._reload_debounce_task.cancel()
+        import time
+        
+        # 记录当前触发时间
+        trigger_time = time.time()
+        self._last_reload_trigger = trigger_time
         
         # 等待防抖延迟
         await asyncio.sleep(self._debounce_delay)
         
+        # 检查是否有更新的触发
+        if self._last_reload_trigger > trigger_time:
+            # 有更新的触发，放弃本次重载
+            logger.debug("放弃过时的重载请求")
+            return
+        
+        # 检查是否已有重载在进行
+        if self._is_reloading:
+            logger.debug("重载已在进行中，跳过")
+            return
+        
         # 执行重载
-        modified_time = datetime.fromtimestamp(
-            os.path.getmtime(self._config_path)
-        ).strftime("%Y-%m-%d %H:%M:%S")
-        
-        logger.info(
-            f"配置文件已更新 (修改时间: {modified_time})，正在重载..."
-        )
-        
-        success = await self.reload()
-        
-        if not success:
-            logger.error(
-                "配置文件重载失败！请检查配置文件格式是否正确。\n"
-                "当前仍使用旧配置运行，修复配置文件后将自动重试。"
+        self._is_reloading = True
+        try:
+            modified_time = datetime.fromtimestamp(
+                os.path.getmtime(self._config_path)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            
+            logger.info(
+                f"配置文件已更新 (修改时间: {modified_time})，正在重载..."
             )
+            
+            success = await self.reload()
+            
+            if not success:
+                logger.error(
+                    "配置文件重载失败！请检查配置文件格式是否正确。\n"
+                    "当前仍使用旧配置运行，修复配置文件后将自动重试。"
+                )
+        finally:
+            self._is_reloading = False
 
     def __repr__(self) -> str:
         watching = self._observer is not None and self._observer.is_alive()
