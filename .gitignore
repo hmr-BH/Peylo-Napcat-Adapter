@@ -39,6 +39,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+dev/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -149,6 +150,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+uv.lock
 
 # Spyder project settings
 .spyderproject
@@ -276,3 +278,5 @@ test
 data/NapcatAdapter.db
 data/NapcatAdapter.db-shm
 data/NapcatAdapter.db-wal
+
+uv.lock
