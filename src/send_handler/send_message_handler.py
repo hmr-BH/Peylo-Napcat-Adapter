@@ -1,3 +1,5 @@
+import re
+
 from maim_message import Seg, MessageBase
 from typing import List, Dict
 
@@ -37,7 +39,10 @@ class SendMessageHandleClass:
             text = seg.data
             if not text:
                 return payload
-            new_payload = cls.build_payload(payload, cls.handle_text_message(text), False)
+            segments = cls.parse_text_with_at(text)
+            for segment in segments:
+                payload = cls.build_payload(payload, segment, False)
+            new_payload = payload
         elif seg.type == "face":
             face_id = seg.data
             new_payload = cls.build_payload(payload, cls.handle_native_face_message(face_id), False)
@@ -74,6 +79,32 @@ class SendMessageHandleClass:
                 cls.handle_forward_message(MessageBase.from_dict(item)) for item in forward_message_content
             ]  # 转发消息不能和其他消息一起发送
         return new_payload
+
+    @staticmethod
+    def parse_text_with_at(text: str) -> List[dict]:
+        """
+        解析文本中的 @标记，返回 NapCat 消息段列表
+        支持 @QQ号（某一位用户） 和 @all（全体成员）
+        注意使用 @all 需要当前机器人账号在当前群聊中有管理员或群主的权限
+        """
+        if not text:
+            return []
+        # 正则匹配 @all 或 @数字（至少一位）
+        pattern = r'(@(?:all|\d+))'
+        parts = re.split(pattern, text)
+        segments = []
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith('@') and (part[1:] == 'all' or part[1:].isdigit()):
+                qq = part[1:]
+                if qq == 'all':
+                    segments.append({"type": "at", "data": {"qq": "all"}})
+                else:
+                    segments.append({"type": "at", "data": {"qq": int(qq)}})
+            else:
+                segments.append({"type": "text", "data": {"text": part}})
+        return segments
 
     @classmethod
     def handle_forward_message(cls, item: MessageBase) -> Dict:
